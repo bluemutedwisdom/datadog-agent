@@ -28,18 +28,18 @@ const (
 )
 
 var (
-	splitterExpvars    = expvar.NewMap("splitter")
-	splitterNotTooBig  = expvar.Int{}
-	splitterTooBig     = expvar.Int{}
-	splitterTotalLoops = expvar.Int{}
-	splitterDropped    = expvar.Int{}
+	splitterExpvars      = expvar.NewMap("splitter")
+	splitterNotTooBig    = expvar.Int{}
+	splitterTooBig       = expvar.Int{}
+	splitterTotalLoops   = expvar.Int{}
+	splitterPayloadDrops = expvar.Int{}
 )
 
 func init() {
 	splitterExpvars.Set("NotTooBig", &splitterNotTooBig)
 	splitterExpvars.Set("TooBig", &splitterTooBig)
 	splitterExpvars.Set("TotalLoops", &splitterTotalLoops)
-	splitterExpvars.Set("Dropped Payloads", &splitterDropped)
+	splitterExpvars.Set("Drops", &splitterPayloadDrops)
 
 }
 
@@ -174,6 +174,9 @@ func handleDroppedPayloads(droppedPayloads ...[]marshaler.Marshaler) {
 	log.Warnf("Payloads could not be splitted and were dropped")
 	splitterPayloadDrops.Add(1)
 
-	}
+}
 
+// GetPayloadDrops returns the number of times we dropped some payloads because we couldn't split them.
+func GetPayloadDrops() int64 {
+	return splitterPayloadDrops.Value()
 }
