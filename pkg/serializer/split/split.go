@@ -32,12 +32,14 @@ var (
 	splitterNotTooBig  = expvar.Int{}
 	splitterTooBig     = expvar.Int{}
 	splitterTotalLoops = expvar.Int{}
+	splitterDropped    = expvar.Int{}
 )
 
 func init() {
 	splitterExpvars.Set("NotTooBig", &splitterNotTooBig)
 	splitterExpvars.Set("TooBig", &splitterTooBig)
 	splitterExpvars.Set("TotalLoops", &splitterTotalLoops)
+	splitterExpvars.Set("Dropped Payloads", &splitterDropped)
 
 }
 
@@ -170,4 +172,8 @@ func marshal(m marshaler.Marshaler, mType MarshalType) ([]byte, error) {
 
 func handleDroppedPayloads(droppedPayloads ...[]marshaler.Marshaler) {
 	log.Warnf("Payloads could not be splitted and were dropped")
+	splitterPayloadDrops.Add(1)
+
+	}
+
 }
