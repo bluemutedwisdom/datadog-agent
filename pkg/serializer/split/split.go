@@ -77,7 +77,7 @@ func Payloads(m marshaler.Marshaler, compress bool, mType MarshalType) (forwarde
 		tempSlice := make([]marshaler.Marshaler, len(marshallers))
 		copy(tempSlice, marshallers)
 		marshallers = []marshaler.Marshaler{}
-		for _, toSplit := range tempSlice {
+		for i, toSplit := range tempSlice {
 			var e error
 			// we have to do this every time to get the proper payload
 			payload, compressedPayload, e := serializeMarshaller(toSplit, compress, mType)
@@ -94,6 +94,7 @@ func Payloads(m marshaler.Marshaler, compress bool, mType MarshalType) (forwarde
 			chunks, err := toSplit.SplitPayload(numChunks)
 			log.Debugf("payload was split into %f chunks", len(chunks))
 			if err != nil {
+				handleDroppedPayloads(tempSlice[i:], marshallers)
 				return smallEnoughPayloads, err
 			}
 			// after the payload has been split, loop through the chunks
@@ -122,6 +123,9 @@ func Payloads(m marshaler.Marshaler, compress bool, mType MarshalType) (forwarde
 			log.Debug("marshallers was not empty, running around the loop again")
 			loops++
 		}
+	}
+	if len(marshallers) != 0 {
+		handleDroppedPayloads(marshallers)
 	}
 
 	return smallEnoughPayloads, nil
@@ -162,4 +166,8 @@ func marshal(m marshaler.Marshaler, mType MarshalType) ([]byte, error) {
 	default:
 		return m.MarshalJSON()
 	}
+}
+
+func handleDroppedPayloads(droppedPayloads ...[]marshaler.Marshaler) {
+	log.Warnf("Payloads could not be splitted and were dropped")
 }
