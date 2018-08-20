@@ -414,9 +414,9 @@ func (c *APIClient) GetRESTObject(path string, output runtime.Object) error {
 	return result.Into(output)
 }
 
-// StartMetadataController runs the metadata controller to collect cluster metadata. This is
+// StartClusterTagsController runs the controller to collect cluster-level tags. This is
 // only called once, when we have confirmed we could correctly connect to the API server.
-func StartMetadataController(stopCh chan struct{}) error {
+func StartClusterTagsController(stopCh chan struct{}) error {
 	var (
 		timeoutSeconds      = time.Duration(config.Datadog.GetInt64("kubernetes_informers_restclient_timeout"))
 		resyncPeriodSeconds = time.Duration(config.Datadog.GetInt64("kubernetes_informers_resync_period"))
@@ -428,12 +428,12 @@ func StartMetadataController(stopCh chan struct{}) error {
 		return err
 	}
 	informerFactory := informers.NewSharedInformerFactory(client, resyncPeriodSeconds*time.Second)
-	metaController := NewMetadataController(
+	tagsController := NewClusterTagsController(
 		informerFactory.Core().V1().Nodes(),
 		informerFactory.Core().V1().Endpoints(),
 	)
 	informerFactory.Start(stopCh)
-	go metaController.Run(stopCh)
+	go tagsController.Run(stopCh)
 
 	return nil
 }

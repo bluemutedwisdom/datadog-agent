@@ -162,8 +162,8 @@ func start(cmd *cobra.Command, args []string) error {
 	} else {
 		// Start controllers
 		stopCh = make(chan struct{})
-		if err := apiserver.StartMetadataController(stopCh); err != nil {
-			log.Errorf("Could not start metadata controller: %v", err)
+		if err := apiserver.StartClusterTagsController(stopCh); err != nil {
+			log.Errorf("Could not start cluster tags controller: %v", err)
 		}
 	}
 

@@ -25,14 +25,14 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
-// MetadataController is responsible for synchronizing objects from the Kubernetes
-// apiserver to build and cache cluster metadata (like service tags) for each node.
+// ClusterTagsController is responsible for synchronizing objects from the Kubernetes
+// apiserver to build and cache cluster-level tags (like service tags) for each node.
 //
 // The controller takes care to garbage collect any data while processing updates/deletes
 // so that the cache does not contain data for deleted pods/services.
 //
 // This controller is used by the Datadog Cluster Agent and supports Kubernetes 1.4+.
-type MetadataController struct {
+type ClusterTagsController struct {
 	nodeLister       corelisters.NodeLister
 	nodeListerSynced cache.InformerSynced
 
@@ -46,82 +46,82 @@ type MetadataController struct {
 	endpoints chan interface{}
 }
 
-func NewMetadataController(nodeInformer coreinformers.NodeInformer, endpointsInformer coreinformers.EndpointsInformer) *MetadataController {
-	m := &MetadataController{
-		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "metadata"),
+func NewClusterTagsController(nodeInformer coreinformers.NodeInformer, endpointsInformer coreinformers.EndpointsInformer) *ClusterTagsController {
+	c := &ClusterTagsController{
+		queue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "cluster-tags"),
 	}
-	m.nodeLister = nodeInformer.Lister()
-	m.nodeListerSynced = nodeInformer.Informer().HasSynced
+	c.nodeLister = nodeInformer.Lister()
+	c.nodeListerSynced = nodeInformer.Informer().HasSynced
 
 	endpointsInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    m.addEndpoints,
-		UpdateFunc: m.updateEndpoints,
-		DeleteFunc: m.deleteEndpoints,
+		AddFunc:    c.addEndpoints,
+		UpdateFunc: c.updateEndpoints,
+		DeleteFunc: c.deleteEndpoints,
 	})
-	m.endpointsLister = endpointsInformer.Lister()
-	m.endpointsListerSynced = endpointsInformer.Informer().HasSynced
+	c.endpointsLister = endpointsInformer.Lister()
+	c.endpointsListerSynced = endpointsInformer.Informer().HasSynced
 
-	return m
+	return c
 }
 
-func (m *MetadataController) Run(stopCh <-chan struct{}) {
-	defer m.queue.ShutDown()
+func (c *ClusterTagsController) Run(stopCh <-chan struct{}) {
+	defer c.queue.ShutDown()
 
 	log.Infof("Starting metadata controller")
 	defer log.Infof("Stopping metadata controller")
 
-	if !cache.WaitForCacheSync(stopCh, m.nodeListerSynced, m.endpointsListerSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.nodeListerSynced, c.endpointsListerSynced) {
 		return
 	}
 
-	go wait.Until(m.worker, time.Second, stopCh)
+	go wait.Until(c.worker, time.Second, stopCh)
 
 	<-stopCh
 }
 
-func (m *MetadataController) worker() {
-	for m.processNextWorkItem() {
+func (c *ClusterTagsController) worker() {
+	for c.processNextWorkItem() {
 	}
 }
 
-func (m *MetadataController) processNextWorkItem() bool {
-	key, quit := m.queue.Get()
+func (c *ClusterTagsController) processNextWorkItem() bool {
+	key, quit := c.queue.Get()
 	if quit {
 		return false
 	}
-	defer m.queue.Done(key)
+	defer c.queue.Done(key)
 
-	err := m.syncEndpoints(key.(string))
+	err := c.syncEndpoints(key.(string))
 	if err != nil {
 		log.Debugf("Error syncing endpoints %v: %v", key, err)
 	}
 
-	if m.endpoints != nil {
-		m.endpoints <- key
+	if c.endpoints != nil {
+		c.endpoints <- key
 	}
 
 	return true
 }
 
-func (m *MetadataController) addEndpoints(obj interface{}) {
+func (c *ClusterTagsController) addEndpoints(obj interface{}) {
 	endpoints, ok := obj.(*corev1.Endpoints)
 	if !ok {
 		return
 	}
 	log.Debugf("Adding endpoints %s/%s", endpoints.Namespace, endpoints.Name)
-	m.enqueue(obj)
+	c.enqueue(obj)
 }
 
-func (m *MetadataController) updateEndpoints(old, cur interface{}) {
+func (c *ClusterTagsController) updateEndpoints(_, cur interface{}) {
 	newEndpoints, ok := cur.(*corev1.Endpoints)
 	if !ok {
 		return
 	}
 	log.Tracef("Updating endpoints %s/%s", newEndpoints.Namespace, newEndpoints.Name)
-	m.enqueue(cur)
+	c.enqueue(cur)
 }
 
-func (m *MetadataController) deleteEndpoints(obj interface{}) {
+func (c *ClusterTagsController) deleteEndpoints(obj interface{}) {
 	endpoints, ok := obj.(*corev1.Endpoints)
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
@@ -136,40 +136,40 @@ func (m *MetadataController) deleteEndpoints(obj interface{}) {
 		}
 	}
 	log.Debugf("Deleting endpoints %s/%s", endpoints.Namespace, endpoints.Name)
-	m.enqueue(obj)
+	c.enqueue(obj)
 }
 
-func (m *MetadataController) enqueue(obj interface{}) {
+func (c *ClusterTagsController) enqueue(obj interface{}) {
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		log.Debugf("Couldn't get key for object %v: %v", obj, err)
 		return
 	}
-	m.queue.Add(key)
+	c.queue.Add(key)
 }
 
-func (m *MetadataController) syncEndpoints(key string) error {
+func (c *ClusterTagsController) syncEndpoints(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
 
-	endpoints, err := m.endpointsLister.Endpoints(namespace).Get(name)
+	endpoints, err := c.endpointsLister.Endpoints(namespace).Get(name)
 	switch {
 	case errors.IsNotFound(err):
 		// Endpoints absence in store means watcher caught the deletion, ensure metadata map is cleaned.
 		log.Tracef("Endpoints has been deleted %v. Attempting to cleanup metadata map", key)
-		err = m.deleteMappedEndpoints(namespace, name)
+		err = c.deleteMappedEndpoints(namespace, name)
 	case err != nil:
 		log.Debugf("Unable to retrieve endpoints %v from store: %v", key, err)
 	default:
-		err = m.mapEndpoints(endpoints)
+		err = c.mapEndpoints(endpoints)
 	}
 	return err
 }
 
 // mapEndpoints matches pods to services via endpoint TargetRef objects. It supports Kubernetes 1.4+.
-func (m *MetadataController) mapEndpoints(endpoints *corev1.Endpoints) error {
+func (c *ClusterTagsController) mapEndpoints(endpoints *corev1.Endpoints) error {
 	nodeToPods := make(map[string]map[string]sets.String)
 
 	// Loop over the subsets to create a mapping of nodes to pods running on the node.
@@ -238,8 +238,8 @@ func (m *MetadataController) mapEndpoints(endpoints *corev1.Endpoints) error {
 	return nil
 }
 
-func (m *MetadataController) deleteMappedEndpoints(namespace, svc string) error {
-	nodes, err := m.nodeLister.List(labels.Everything()) // list all nodes
+func (c *ClusterTagsController) deleteMappedEndpoints(namespace, svc string) error {
+	nodes, err := c.nodeLister.List(labels.Everything()) // list all nodes
 	if err != nil {
 		return err
 	}
@@ -266,8 +266,8 @@ func (m *MetadataController) deleteMappedEndpoints(namespace, svc string) error 
 	return nil
 }
 
-// GetPodMetadataNames is used when the API endpoint of the DCA to get the metadata of a pod is hit.
-func GetPodMetadataNames(nodeName, ns, podName string) ([]string, error) {
+// GetPodClusterTags returns a list of cluster-level tags for the specified pod, namespace, and node.
+func GetPodClusterTags(nodeName, ns, podName string) ([]string, error) {
 	var metaList []string
 	cacheKey := agentcache.BuildAgentKey(metadataMapperCachePrefix, nodeName)
 

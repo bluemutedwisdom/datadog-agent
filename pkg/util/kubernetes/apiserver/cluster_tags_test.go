@@ -27,10 +27,10 @@ import (
 
 func alwaysReady() bool { return true }
 
-func TestMetadataControllerSyncEndpoints(t *testing.T) {
+func TestClusterTagsControllerSyncEndpoints(t *testing.T) {
 	client := fake.NewSimpleClientset()
 
-	metaController, informerFactory := newFakeMetadataController(client)
+	tagsController, informerFactory := newFakeClusterTagsController(client)
 
 	pod1 := newFakePod(
 		"default",
@@ -270,7 +270,7 @@ func TestMetadataControllerSyncEndpoints(t *testing.T) {
 		key, err := cache.MetaNamespaceKeyFunc(tt.endpoints)
 		require.NoError(t, err)
 
-		err = metaController.syncEndpoints(key)
+		err = tagsController.syncEndpoints(key)
 		require.NoError(t, err)
 
 		for nodeName, expectedMapper := range tt.expectedBundles {
@@ -288,14 +288,14 @@ func TestMetadataControllerSyncEndpoints(t *testing.T) {
 func TestMetadataController(t *testing.T) {
 	client := fake.NewSimpleClientset()
 
-	metaController, informerFactory := newFakeMetadataController(client)
+	tagsController, informerFactory := newFakeClusterTagsController(client)
 
-	metaController.endpoints = make(chan interface{}, 1)
+	tagsController.endpoints = make(chan interface{}, 1)
 
 	stop := make(chan struct{})
 	defer close(stop)
 	informerFactory.Start(stop)
-	go metaController.Run(stop)
+	go tagsController.Run(stop)
 
 	c := client.CoreV1()
 	require.NotNil(t, c)
@@ -423,12 +423,12 @@ func TestMetadataController(t *testing.T) {
 
 	// wait for endpoints to be synced by controller
 	select {
-	case <-metaController.endpoints:
+	case <-tagsController.endpoints:
 	case <-timeout.C:
 		require.FailNow(t, "Timeout waiting for endpoints to sync")
 	}
 
-	metadataNames, err := GetPodMetadataNames(node.Name, pod.Namespace, pod.Name)
+	metadataNames, err := GetPodClusterTags(node.Name, pod.Namespace, pod.Name)
 	require.NoError(t, err)
 	assert.Len(t, metadataNames, 1)
 	assert.Contains(t, metadataNames, "kube_service:nginx-1")
@@ -446,12 +446,12 @@ func TestMetadataController(t *testing.T) {
 
 	// wait for endpoints to be synced by controller
 	select {
-	case <-metaController.endpoints:
+	case <-tagsController.endpoints:
 	case <-timeout.C:
 		require.FailNow(t, "Timeout waiting for endpoints to sync")
 	}
 
-	metadataNames, err = GetPodMetadataNames(node.Name, pod.Namespace, pod.Name)
+	metadataNames, err = GetPodClusterTags(node.Name, pod.Namespace, pod.Name)
 	require.NoError(t, err)
 	assert.Len(t, metadataNames, 2)
 	assert.Contains(t, metadataNames, "kube_service:nginx-1")
@@ -469,15 +469,15 @@ func TestMetadataController(t *testing.T) {
 	assert.Contains(t, services, "nginx-1")
 }
 
-func newFakeMetadataController(client kubernetes.Interface) (*MetadataController, informers.SharedInformerFactory) {
+func newFakeClusterTagsController(client kubernetes.Interface) (*ClusterTagsController, informers.SharedInformerFactory) {
 	informerFactory := informers.NewSharedInformerFactory(client, 0)
 
-	metaController := NewMetadataController(
+	tagsController := NewClusterTagsController(
 		informerFactory.Core().V1().Nodes(),
 		informerFactory.Core().V1().Endpoints(),
 	)
-	metaController.nodeListerSynced = alwaysReady
-	metaController.endpointsListerSynced = alwaysReady
+	tagsController.nodeListerSynced = alwaysReady
+	tagsController.endpointsListerSynced = alwaysReady
 
-	return metaController, informerFactory
+	return tagsController, informerFactory
 }
